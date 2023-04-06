@@ -1,2 +1,2 @@
-from .sparse_gp import SparseVariationalGP
+from .svgp import SparseVariationalGP
 from .exact_gp import ExactGP
