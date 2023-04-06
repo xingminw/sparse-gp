@@ -150,14 +150,6 @@ class SparseVariationalGP(SparseGP):
 
         # get matrix K_uu
         matrix_k_uu = self.kernel(self.get_dis(selected_points_x), width_l)         # Find K_uu
-
-        # # get the svd of matrix K_uu
-        # svd_k_uu_left, svd_k_uu_sigma, _ = np.linalg.svd(matrix_k_uu)
-        # inv_k_uu_sigma = np.diag(1.0 / svd_k_uu_sigma)
-        #
-        # # find the inverse of matrix K_uu
-        # inv_matrix_k_uu = svd_k_uu_left @ inv_k_uu_sigma @ svd_k_uu_left.T
-
         inv_matrix_k_uu = np.linalg.inv(matrix_k_uu)
 
         # Get matrix K_fu and K_uf
@@ -173,27 +165,25 @@ class SparseVariationalGP(SparseGP):
         for i in range(self.points_num):
             matrix_b[i] = 1 - matrix_q_ff[i, i]
 
-        # matrix_c = matrix_q_ff + np.eye(self.points_num) * sigma ** 2
-
-        # apply matrix inversion lemma: (QQ.T+s^2*I)^-1 = s^-2[I-*Q(s^2*I+Q.T Q)^-1Q.T]
+        # inv matrix, apply matrix inversion lemma: (QQ.T+s^2*I)^-1 = s^-2[I-*Q(s^2*I+Q.T Q)^-1Q.T]
         inv_matrix_left = np.linalg.cholesky(inv_matrix_k_uu)
         matrix_q_left = matrix_k_fu @ inv_matrix_left
         matrix_q_smaller = matrix_q_left.T @ matrix_q_left
-        # matrix_q_left = matrix_k_fu @ svd_k_uu_left @ np.sqrt(inv_k_uu_sigma)
         q_right_inv_mat = np.linalg.inv(sigma ** 2 * np.eye(current_inducing_num) + matrix_q_smaller)
         inv_matrix_c = np.eye(self.points_num) - matrix_q_left @ q_right_inv_mat @ matrix_q_left.T
         inv_matrix_c /= sigma ** 2
 
-        # det(Im + AB) = det(In + BA) and det(aI_m) = a^m
+        # dete matrix, det(Im + AB) = det(In + BA) and det(aI_m) = a^m
         log_det_diff = np.log(1 / sigma) * 2 * self.points_num
         equiv_matrix_c = matrix_q_smaller / (sigma ** 2) + np.eye(current_inducing_num)
         sign, log_det_c = np.linalg.slogdet(equiv_matrix_c)
         log_det_c = log_det_c * sign - log_det_diff
 
-        # slow method to perform inverse (direct inversion, very slow)
+        # # slow method to perform inverse (direct inversion, very slow)
+        # matrix_c = matrix_q_ff + np.eye(self.points_num) * sigma ** 2
         # inv_matrix_c = np.linalg.inv(matrix_c)
-
-        # slow method to calculate the determinant (direct calculating logdet, very slow)
+        # #
+        # # slow method to calculate the determinant (direct calculating logdet, very slow)
         # sign, log_det_c = np.linalg.slogdet(matrix_c)
         # log_det_c = sign * log_det_c
 
