@@ -11,7 +11,7 @@ from gp_algs import SparseVariationalGP, ExactGP
 
 
 # Make some 1D training data
-total_num = 500  # 500 training points
+total_num = 2000  # 500 training points
 x_range = 10
 # raw_points_x = np.linspace(0, x_range, total_num)    # Inputs evenly spaced between 0 and 10
 raw_points_x = np.random.rand(total_num) * x_range    # Inputs randomly spaced between 0 and 100

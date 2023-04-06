@@ -51,6 +51,9 @@ class SparseVariationalGP(SparseGP):
                     new_selected_y = self.points_y[indices]  # Define optimum sparse outputs found so far
                     lb_best = lb  # Store maximum lower bound found so far
 
+        # selection_time = time.time()
+        # print("Seleciton time:", np.round(selection_time - start_time, 3))
+
         # Update hyperparameters using scipy.minimize
         # Arguments needed as input to 'minimize' function
         a = new_selected_x
@@ -61,8 +64,10 @@ class SparseVariationalGP(SparseGP):
 
         # Search for optimum hyperparameters
         sol = minimize(self._get_neg_lower_bound, x0=theta, args=(a,),
-                       method='SLSQP', bounds=bnds)
+                       method='SLSQP',
+                       bounds=bnds)
         theta = sol.x
+        # print("Opt params time:", np.round(time.time() - selection_time, 3))
 
         # Find final gram matrix (and its inverse)
         self.inducing_points_x = new_selected_x
@@ -140,17 +145,20 @@ class SparseVariationalGP(SparseGP):
 
         raw_points_x, raw_points_y = self.points_x, self.points_y
         selected_points_x = a
+        current_inducing_num = len(selected_points_x)
         width_l, sigma = theta
 
         # get matrix K_uu
         matrix_k_uu = self.kernel(self.get_dis(selected_points_x), width_l)         # Find K_uu
 
-        # get the svd of matrix K_uu
-        svd_k_uu_left, svd_k_uu_sigma, _ = np.linalg.svd(matrix_k_uu)
-        inv_k_uu_sigma = np.diag(1.0 / svd_k_uu_sigma)
+        # # get the svd of matrix K_uu
+        # svd_k_uu_left, svd_k_uu_sigma, _ = np.linalg.svd(matrix_k_uu)
+        # inv_k_uu_sigma = np.diag(1.0 / svd_k_uu_sigma)
+        #
+        # # find the inverse of matrix K_uu
+        # inv_matrix_k_uu = svd_k_uu_left @ inv_k_uu_sigma @ svd_k_uu_left.T
 
-        # find the inverse of matrix K_uu
-        inv_matrix_k_uu = svd_k_uu_left @ inv_k_uu_sigma @ svd_k_uu_left.T
+        inv_matrix_k_uu = np.linalg.inv(matrix_k_uu)
 
         # Get matrix K_fu and K_uf
         matrix_k_fu = self.kernel(self.get_dis(raw_points_x, selected_points_x), width_l)  # Find K_fu
@@ -165,29 +173,30 @@ class SparseVariationalGP(SparseGP):
         for i in range(self.points_num):
             matrix_b[i] = 1 - matrix_q_ff[i, i]
 
-        # Calculate the (negative) lower bound
-        matrix_c = matrix_q_ff + np.eye(self.points_num) * sigma ** 2
+        # matrix_c = matrix_q_ff + np.eye(self.points_num) * sigma ** 2
 
-        # compute the inverse of matrix C, method 1: svd decomposition
+        # apply matrix inversion lemma: (QQ.T+s^2*I)^-1 = s^-2[I-*Q(s^2*I+Q.T Q)^-1Q.T]
+        inv_matrix_left = np.linalg.cholesky(inv_matrix_k_uu)
+        matrix_q_left = matrix_k_fu @ inv_matrix_left
+        matrix_q_smaller = matrix_q_left.T @ matrix_q_left
         # matrix_q_left = matrix_k_fu @ svd_k_uu_left @ np.sqrt(inv_k_uu_sigma)
-        # svd_q_left, svd_q_sigma, _ = np.linalg.svd(matrix_q_left)
-        #
-        # enlarged_q_sigma = np.hstack([np.square(svd_q_sigma), np.zeros(self.points_num - self.inducing_num)])
-        # inv_matrix_c_diagonal = 1.0 / (enlarged_q_sigma + sigma ** 2 * np.ones(self.points_num))
-        # inv_matrix_c_diagonal = np.diag(inv_matrix_c_diagonal)
-        # inv_matrix_c = svd_q_left @ inv_matrix_c_diagonal @ svd_q_left.T
-
-        # method 2: matrix inverse lemma
-        matrix_q_left = matrix_k_fu @ svd_k_uu_left @ np.sqrt(inv_k_uu_sigma)
-        q_right_inv_mat = np.linalg.inv(sigma ** 2 * np.eye(self.inducing_num) + matrix_q_left.T @ matrix_q_left)
+        q_right_inv_mat = np.linalg.inv(sigma ** 2 * np.eye(current_inducing_num) + matrix_q_smaller)
         inv_matrix_c = np.eye(self.points_num) - matrix_q_left @ q_right_inv_mat @ matrix_q_left.T
         inv_matrix_c /= sigma ** 2
 
-        # method 3: directly perform inverse
+        # det(Im + AB) = det(In + BA) and det(aI_m) = a^m
+        log_det_diff = np.log(1 / sigma) * 2 * self.points_num
+        equiv_matrix_c = matrix_q_smaller / (sigma ** 2) + np.eye(current_inducing_num)
+        sign, log_det_c = np.linalg.slogdet(equiv_matrix_c)
+        log_det_c = log_det_c * sign - log_det_diff
+
+        # slow method to perform inverse (direct inversion, very slow)
         # inv_matrix_c = np.linalg.inv(matrix_c)
 
-        sign, log_det_c = np.linalg.slogdet(matrix_c)
-        log_det_c = sign * log_det_c
+        # slow method to calculate the determinant (direct calculating logdet, very slow)
+        # sign, log_det_c = np.linalg.slogdet(matrix_c)
+        # log_det_c = sign * log_det_c
+
         nlb = 0.5 * log_det_c + 0.5 * raw_points_y.T @ inv_matrix_c @ raw_points_y
 
         # todo: this can be simply removed to get the projected process approximation
