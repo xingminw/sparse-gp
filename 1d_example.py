@@ -5,11 +5,13 @@ This code is modified based on
 
 import numpy as np
 import matplotlib.pyplot as plt
+
+from time import time
 from gp_algs import SparseVariationalGP, ExactGP
 
 
 # Make some 1D training data
-total_num = 500  # 500 training points
+total_num = 2000  # 500 training points
 x_range = 10
 # raw_points_x = np.linspace(0, x_range, total_num)    # Inputs evenly spaced between 0 and 10
 raw_points_x = np.random.rand(total_num) * x_range    # Inputs randomly spaced between 0 and 100
@@ -48,11 +50,13 @@ if sgp:
     # Print results
     print('Maximum lower bound:', np.round(lb_best, 3))
     print('Hyperparameters:', np.round(sgp.width_l, 3), np.round(sgp.sigma, 3))
-    print('Elapsed time:', np.round(elapsed_time, 3))
+    print('Training time:', np.round(elapsed_time, 3))
 
+    start_time = time()
     for n in range(predict_num):
         local_x = predict_x[n]
         predict_y_mean[n], predict_y_std[n] = sgp.predict(local_x)
+    print('Prediction time:', np.round(time() - start_time))
 
     # Plot results
     plt.figure()
@@ -80,11 +84,12 @@ if gp:
 
     # Print results
     print('Hyperparameters:', np.round(gp.width_l, 3), np.round(gp.sigma, 3))
-    print('Elapsed time:', np.round(elapsed_time, 3))
-
+    print('Training time:', np.round(elapsed_time, 3))
+    start_time = time()
     for n in range(predict_num):
         local_x = predict_x[n]
         predict_y_mean[n], predict_y_std[n] = gp.predict(local_x)
+    print('Prediction time:', np.round(time() - start_time))
 
     # Plot results
     plt.figure()
