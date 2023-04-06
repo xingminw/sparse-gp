@@ -139,15 +139,25 @@ class SparseVariationalGP(SparseGP):
         """
 
         raw_points_x, raw_points_y = self.points_x, self.points_y
-        selected_points_x = a       # Extract arguments
-        width_l, sigma = theta                                  # Extract hyperparameters
+        selected_points_x = a
+        width_l, sigma = theta
+
+        # get matrix K_uu
         matrix_k_uu = self.kernel(self.get_dis(selected_points_x), width_l)         # Find K_uu
-        inverse_matrix_k_uu = np.linalg.inv(matrix_k_uu)                            # Find inverse of K_uu
+
+        # get the svd of matrix K_uu
+        svd_k_uu_left, svd_k_uu_sigma, _ = np.linalg.svd(matrix_k_uu)
+        inv_k_uu_sigma = np.diag(1.0 / svd_k_uu_sigma)
+
+        # find the inverse of matrix K_uu
+        inv_matrix_k_uu = svd_k_uu_left @ inv_k_uu_sigma @ svd_k_uu_left.T
+
+        # Get matrix K_fu and K_uf
         matrix_k_fu = self.kernel(self.get_dis(raw_points_x, selected_points_x), width_l)  # Find K_fu
         matrix_k_uf = np.transpose(matrix_k_fu)  # Find K_MN
 
-        # We define A = K_fu * invK_uu * K_uf
-        matrix_q_ff = matrix_k_fu @ inverse_matrix_k_uu @ matrix_k_uf
+        # Matrix Q_ff = K_fu * invK_uu * K_uf
+        matrix_q_ff = matrix_k_fu @ inv_matrix_k_uu @ matrix_k_uf
 
         # B is an array containing only diagonal elements of K_uu - A.
         # Note we assume diagonal elements of A are always equal to 1.
@@ -157,8 +167,33 @@ class SparseVariationalGP(SparseGP):
 
         # Calculate the (negative) lower bound
         matrix_c = matrix_q_ff + np.eye(self.points_num) * sigma ** 2
+
+        # compute the inverse of matrix C, method 1: svd decomposition
+        # matrix_q_left = matrix_k_fu @ svd_k_uu_left @ np.sqrt(inv_k_uu_sigma)
+        # svd_q_left, svd_q_sigma, _ = np.linalg.svd(matrix_q_left)
+        #
+        # enlarged_q_sigma = np.hstack([np.square(svd_q_sigma), np.zeros(self.points_num - self.inducing_num)])
+        # inv_matrix_c_diagonal = 1.0 / (enlarged_q_sigma + sigma ** 2 * np.ones(self.points_num))
+        # inv_matrix_c_diagonal = np.diag(inv_matrix_c_diagonal)
+        # inv_matrix_c = svd_q_left @ inv_matrix_c_diagonal @ svd_q_left.T
+
+        # method 2: matrix inverse lemma
+        matrix_q_left = matrix_k_fu @ svd_k_uu_left @ np.sqrt(inv_k_uu_sigma)
+        q_right_inv_mat = np.linalg.inv(sigma ** 2 * np.eye(self.inducing_num) + matrix_q_left.T @ matrix_q_left)
+        inv_matrix_c = np.eye(self.points_num) - matrix_q_left @ q_right_inv_mat @ matrix_q_left.T
+        inv_matrix_c /= sigma ** 2
+
+        # method 3: directly perform inverse
+        # inv_matrix_c = np.linalg.inv(matrix_c)
+
         sign, log_det_c = np.linalg.slogdet(matrix_c)
         log_det_c = sign * log_det_c
-        nlb = 0.5 * log_det_c + 0.5 * raw_points_y.T @ np.linalg.inv(matrix_c) @ raw_points_y
+        nlb = 0.5 * log_det_c + 0.5 * raw_points_y.T @ inv_matrix_c @ raw_points_y
+
+        # todo: this can be simply removed to get the projected process approximation
         nlb += (1 / (2 * sigma ** 2) * np.sum(matrix_b))
         return np.ravel(nlb)
+
+
+def compare_matrix(mat1, mat2):
+    print("Diff:", np.linalg.norm(mat1 - mat2))
