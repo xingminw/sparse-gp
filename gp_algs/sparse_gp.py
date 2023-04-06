@@ -33,7 +33,7 @@ class SparseGP(GaussianProcesses):
         self.inv_matrix_k_uu = np.linalg.inv(self.matrix_k_uu)
         self.matrix_k_fu = self.kernel(self.get_dis(self.points_x, self.inducing_points_x), self.width_l)  # Find K_fu
         self.matrix_k_uf = np.transpose(self.matrix_k_fu)  # Find K_MN
-        self.matrix_c = 1 / (self.sigma ** 2) * np.dot(self.matrix_k_uf, self.matrix_k_fu) + self.matrix_k_uu
+        self.matrix_c = 1 / (self.sigma ** 2) * self.matrix_k_uf @ self.matrix_k_fu + self.matrix_k_uu
         self.inverse_c = np.linalg.inv(self.matrix_c)
 
     def predict(self, predict_x):
@@ -44,14 +44,14 @@ class SparseGP(GaussianProcesses):
 
         matrix_k_us = self.kernel(inducing_distances, self.width_l)
         matrix_k_su = np.transpose(matrix_k_us)
-        matrix_q_star_star = np.dot(np.dot(matrix_k_su, self.inv_matrix_k_uu), matrix_k_us)
+        matrix_q_star_star = matrix_k_su @ self.inv_matrix_k_uu @ matrix_k_us
 
         matrix_k_us = self.kernel(inducing_distances, self.width_l)
 
-        predict_y_mean = 1 / (self.sigma ** 2) * np.dot(matrix_k_su, self.inverse_c)
-        predict_y_mean = np.dot(np.dot(predict_y_mean, self.matrix_k_uf), self.points_y)
+        predict_y_mean = 1 / (self.sigma ** 2) * matrix_k_su @ self.inverse_c
+        predict_y_mean = predict_y_mean @ self.matrix_k_uf @ self.points_y
         predict_y_var = 1 + self.sigma ** 2 - matrix_q_star_star
-        predict_y_var += np.dot(np.dot(matrix_k_su, self.inverse_c), matrix_k_us)
+        predict_y_var += matrix_k_su @ self.inverse_c @ matrix_k_us
         predict_y_std = np.sqrt(predict_y_var)
         return predict_y_mean, predict_y_std
 

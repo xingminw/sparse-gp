@@ -36,7 +36,7 @@ class ExactGP(GaussianProcesses):
         self.update_matrices()
         (sign, log_det_c) = np.linalg.slogdet(self.matrix_c)
         log_det_c = sign * log_det_c
-        return 0.5 * log_det_c + 0.5 * np.dot(np.transpose(self.points_y), np.dot(self.inverse_c, self.points_y))
+        return 0.5 * log_det_c + 0.5 * np.transpose(self.points_y) @ self.inverse_c @ self.points_y
         # return log_det_c + 0.5 * np.dot(self.points_y, np.dot(self.inverse_c, self.points_y))
 
     def _neg_ll_derivative(self):

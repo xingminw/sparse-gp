@@ -147,7 +147,7 @@ class SparseVariationalGP(SparseGP):
         matrix_k_uf = np.transpose(matrix_k_fu)  # Find K_MN
 
         # We define A = K_fu * invK_uu * K_uf
-        matrix_q_ff = np.dot(matrix_k_fu, np.dot(inverse_matrix_k_uu, matrix_k_uf))
+        matrix_q_ff = matrix_k_fu @ inverse_matrix_k_uu @ matrix_k_uf
 
         # B is an array containing only diagonal elements of K_uu - A.
         # Note we assume diagonal elements of A are always equal to 1.
@@ -159,6 +159,6 @@ class SparseVariationalGP(SparseGP):
         matrix_c = matrix_q_ff + np.eye(self.points_num) * sigma ** 2
         sign, log_det_c = np.linalg.slogdet(matrix_c)
         log_det_c = sign * log_det_c
-        nlb = -(-0.5 * log_det_c - 0.5 * np.dot(raw_points_y.T, np.dot(np.linalg.inv(matrix_c), raw_points_y))
-                - 1 / (2 * sigma ** 2) * np.sum(matrix_b))
+        nlb = 0.5 * log_det_c + 0.5 * raw_points_y.T @ np.linalg.inv(matrix_c) @ raw_points_y
+        nlb += (1 / (2 * sigma ** 2) * np.sum(matrix_b))
         return np.ravel(nlb)
