@@ -9,10 +9,12 @@ import numpy as np
 from scipy.optimize import minimize
 from .sparse_gp import SparseGP
 from tqdm import tqdm
+from matplotlib import pyplot as plt
+from sklearn.metrics import mean_squared_error
 
 
 class SparseVariationalGP(SparseGP):
-    def __init__(self):
+    def __init__(self, variational: bool=True):
         # input params
         super().__init__()
         self.inducing_points_x = None
@@ -23,6 +25,7 @@ class SparseVariationalGP(SparseGP):
         self.matrix_k_fu = None
         self.matrix_k_uu = None
         self.inv_matrix_k_uu = None
+        self.variational = variational
 
     def train(self, candidate_num):
         start_time = time.time()                    # Note the time when training began
@@ -78,9 +81,9 @@ class SparseVariationalGP(SparseGP):
         elapsed_time = time.time() - start_time     # Time taken for training
         return lb_best, elapsed_time
 
-    def train_greedy(self, candidate_num):
+    def train_greedy(self, candidate_num, stepwise_output=False):
         start_time = time.time()  # Note the time when training began
-
+        rmse = []  # For stepwise training
         # Loop over all the candidate sparse points
         selected_x, selected_y, active_indices, lb_best = [], [], [], None
         for _ in tqdm(range(self.inducing_num)):
@@ -126,6 +129,40 @@ class SparseVariationalGP(SparseGP):
                            method='L-BFGS-B')
             theta = sol.x
             self.width_l, self.sigma = theta
+            if stepwise_output:  # Incrementally increase number of inducing points and compute RMSE save results/plot
+                self.inducing_points_x = np.vstack(selected_x)
+                self.inducing_points_y = np.vstack(selected_y)
+                self.update_matrices()
+                predict_x = np.linspace(0, 10, 200)
+                predict_y_mean = []
+                predict_y_std = []
+                for x in predict_x:
+                    ym, ys = self.predict(x)
+                    predict_y_mean.append(ym[0][0])
+                    predict_y_std.append(ys[0][0])
+                predict_y_mean = np.array(predict_y_mean)
+                predict_y_std = np.array(predict_y_std)
+
+                predict_y_points = []
+                for x in self.points_x:
+                    ym, ys = self.predict(x)
+                    predict_y_points.append(ym[0][0])
+                predict_y_points = np.array(predict_y_points)
+                rmse.append(mean_squared_error(self.points_y, predict_y_points, squared=False))
+
+
+                fig = plt.figure()
+                plt.grid()
+                plt.plot(self.points_x, self.points_y, '.', color='blue', label='Full dataset', zorder=0)
+                plt.plot(self.inducing_points_x, self.inducing_points_y, 'o',
+                         markeredgecolor='black', markerfacecolor='red',
+                         markeredgewidth=1.5, markersize=10, label='Sparse dataset', zorder=10)
+                plt.plot(predict_x, predict_y_mean, 'black', label='Sparse GP', linewidth=3, zorder=5)
+                plt.xlabel("x")
+                plt.ylabel("f(x)")
+                plt.title("Inducing Points: {}".format(len(selected_x)))
+                plt.xlim([0,10])
+                plt.ylim([-2,2])
 
         # Find final gram matrix (and its inverse)
         self.inducing_points_x = np.vstack(selected_x)
@@ -133,7 +170,10 @@ class SparseVariationalGP(SparseGP):
         self.update_matrices()
 
         elapsed_time = time.time() - start_time  # Time taken for training
-        return lb_best, elapsed_time
+        if stepwise_output:
+            return lb_best, elapsed_time, rmse
+        else:
+            return lb_best, elapsed_time
 
     def _get_neg_lower_bound(self, theta, a):
         """
@@ -188,9 +228,8 @@ class SparseVariationalGP(SparseGP):
         # log_det_c = sign * log_det_c
 
         nlb = 0.5 * log_det_c + 0.5 * raw_points_y.T @ inv_matrix_c @ raw_points_y
-
-        # todo: this can be simply removed to get the projected process approximation
-        nlb += (1 / (2 * sigma ** 2) * np.sum(matrix_b))
+        if self.variational:
+            nlb += (1 / (2 * sigma ** 2) * np.sum(matrix_b))
         return np.ravel(nlb)
 
 
